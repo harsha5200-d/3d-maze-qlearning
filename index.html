@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description"
+        content="Robot Maze Navigation with Q-Learning. Python trains the agent, Three.js visualizes the path." />
+    <title>Robot Maze Navigation | Q-Learning</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- Inline OrbitControls (compatible with Three.js r128) -->
+    <script>
+        THREE.OrbitControls = function (camera, domElement) {
+            this.camera = camera; this.domElement = domElement;
+            this.enabled = true; this.enableDamping = false;
+            this.dampingFactor = 0.05; this.minDistance = 0;
+            this.maxDistance = Infinity; this.maxPolarAngle = Math.PI;
+            var scope = this;
+            var spherical = new THREE.Spherical(), sphericalDelta = new THREE.Spherical();
+            var scale = 1, panOffset = new THREE.Vector3();
+            var rotateStart = new THREE.Vector2(), rotateEnd = new THREE.Vector2(), rotateDelta = new THREE.Vector2();
+            var dollyStart = new THREE.Vector2(), dollyEnd = new THREE.Vector2(), dollyDelta = new THREE.Vector2();
+            var panStart = new THREE.Vector2(), panEnd = new THREE.Vector2(), panDelta = new THREE.Vector2();
+            var STATE = { NONE: -1, ROTATE: 0, DOLLY: 1, PAN: 2 };
+            var state = STATE.NONE;
+            var EPS = 0.000001, twoPI = 2 * Math.PI;
+            var target = new THREE.Vector3(), offset = new THREE.Vector3();
+            var quat = new THREE.Quaternion().setFromUnitVectors(camera.up, new THREE.Vector3(0, 1, 0));
+            var quatInverse = quat.clone().invert();
+            function clampDistance(d) { return Math.max(scope.minDistance, Math.min(scope.maxDistance, d)); }
+            function rotateLeft(a) { sphericalDelta.theta -= a; }
+            function rotateUp(a) { sphericalDelta.phi -= a; }
+            function dollyIn(s) { scale /= s; } function dollyOut(s) { scale *= s; }
+            var panLeftV = new THREE.Vector3();
+            function panLeft(d, mat) { panLeftV.setFromMatrixColumn(mat, 0); panLeftV.multiplyScalar(-d); panOffset.add(panLeftV); }
+            var panUpV = new THREE.Vector3();
+            function panUp(d, mat) { panUpV.setFromMatrixColumn(mat, 1); panUpV.multiplyScalar(d); panOffset.add(panUpV); }
+            var panDeltaV = new THREE.Vector3();
+            function pan(dx, dy) { var el = scope.domElement; if (camera.isPerspectiveCamera) { panDeltaV.copy(camera.position).sub(target); var td = panDeltaV.length() * Math.tan((camera.fov / 2) * Math.PI / 180); panLeft(2 * dx * td / el.clientHeight, camera.matrix); panUp(2 * dy * td / el.clientHeight, camera.matrix); } }
+            function getZS() { return Math.pow(0.95, 1); }
+            function onMouseDown(e) {
+                if (!scope.enabled) return; e.preventDefault();
+                if (e.button === 0) { state = STATE.ROTATE; rotateStart.set(e.clientX, e.clientY); }
+                else if (e.button === 1) { state = STATE.DOLLY; dollyStart.set(e.clientX, e.clientY); }
+                else if (e.button === 2) { state = STATE.PAN; panStart.set(e.clientX, e.clientY); }
+                if (state !== STATE.NONE) { document.addEventListener('mousemove', onMouseMove, false); document.addEventListener('mouseup', onMouseUp, false); }
+            }
+            function onMouseMove(e) {
+                if (!scope.enabled) return; e.preventDefault();
+                if (state === STATE.ROTATE) { rotateEnd.set(e.clientX, e.clientY); rotateDelta.subVectors(rotateEnd, rotateStart).multiplyScalar(0.5 * Math.PI / domElement.clientHeight); rotateLeft(twoPI * rotateDelta.x); rotateUp(twoPI * rotateDelta.y); rotateStart.copy(rotateEnd); scope.update(); }
+                else if (state === STATE.DOLLY) { dollyEnd.set(e.clientX, e.clientY); dollyDelta.subVectors(dollyEnd, dollyStart); if (dollyDelta.y > 0) dollyIn(getZS()); else dollyOut(getZS()); dollyStart.copy(dollyEnd); scope.update(); }
+                else if (state === STATE.PAN) { panEnd.set(e.clientX, e.clientY); panDelta.subVectors(panEnd, panStart); pan(panDelta.x, panDelta.y); panStart.copy(panEnd); scope.update(); }
+            }
+            function onMouseUp() { document.removeEventListener('mousemove', onMouseMove, false); document.removeEventListener('mouseup', onMouseUp, false); state = STATE.NONE; }
+            function onWheel(e) { if (e.deltaY < 0) dollyOut(getZS()); else dollyIn(getZS()); scope.update(); }
+            function onContext(e) { if (scope.enabled) e.preventDefault(); }
+            domElement.addEventListener('contextmenu', onContext, false);
+            domElement.addEventListener('mousedown', onMouseDown, false);
+            domElement.addEventListener('wheel', onWheel, false);
+            this.update = function () {
+                var pos = scope.camera.position;
+                offset.copy(pos).sub(target); offset.applyQuaternion(quat);
+                spherical.setFromVector3(offset);
+                spherical.theta += sphericalDelta.theta; spherical.phi += sphericalDelta.phi;
+                spherical.phi = Math.max(EPS, Math.min(scope.maxPolarAngle - EPS, spherical.phi));
+                spherical.radius *= scale; spherical.radius = clampDistance(spherical.radius);
+                spherical.makeSafe();
+                offset.setFromSpherical(spherical); offset.applyQuaternion(quatInverse);
+                pos.copy(target).add(offset); scope.camera.lookAt(target);
+                if (scope.enableDamping) { sphericalDelta.theta *= (1 - scope.dampingFactor); sphericalDelta.phi *= (1 - scope.dampingFactor); panOffset.multiplyScalar(1 - scope.dampingFactor); }
+                else { sphericalDelta.set(0, 0, 0); panOffset.set(0, 0, 0); }
+                scale = 1; target.add(panOffset);
+            };
+            this.dispose = function () { domElement.removeEventListener('contextmenu', onContext, false); domElement.removeEventListener('mousedown', onMouseDown, false); domElement.removeEventListener('wheel', onWheel, false); };
+            this.update();
+        };
+    </script>
+
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <div id="app">
+
+        <!-- ── SIDEBAR PANEL ── -->
+        <aside id="sidebar">
+
+            <!-- Header / Logo -->
+            <div class="sidebar-header">
+                <div class="logo-row">
+                    <div class="logo-icon">🤖</div>
+                    <div class="logo-text">
+                        <h1>Robot Maze</h1>
+                        <p>Q-Learning · Python + Three.js</p>
+                    </div>
+                </div>
+                <div style="margin-top: 12px;">
+                    <a href="https://github.com/harsha5200-d/3d-maze-qlearning" target="_blank" class="github-link">
+                        <svg height="20" width="20" viewBox="0 0 16 16" style="fill: white; vertical-align: middle; margin-right: 6px;">
+                            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+                        </svg>
+                        View on GitHub
+                    </a>
+                </div>
+            </div>
+
+            <!-- Workflow info -->
+            <div class="section">
+                <div class="section-title">How It Works</div>
+            </div>
+            <div class="legend" style="margin: 0 24px;">
+                <div class="legend-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+                    <span style="color:var(--accent);font-weight:600;font-size:12px;">① Python trains the agent</span>
+                    <code
+                        style="font-size:11px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">python train.py</code>
+                </div>
+                <div class="legend-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:8px;">
+                    <span style="color:var(--accent2);font-weight:600;font-size:12px;">② Three.js visualizes the
+                        path</span>
+                    <code
+                        style="font-size:11px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">Click "Load Path" below</code>
+                </div>
+            </div>
+
+            <!-- Live Training Controls -->
+            <div class="section" style="margin-top:16px;">
+                <div class="section-title">Training Controls</div>
+            </div>
+            <div class="param-group" style="margin: 0 24px;">
+                <div class="param-item">
+                    <label>Episodes: <span id="val-episodes">1500</span></label>
+                    <input type="range" id="input-episodes" min="100" max="10000" step="100" value="1500">
+                </div>
+                <div class="param-grid" style="margin-top: 12px;">
+                    <div class="param-item">
+                        <label>Alpha (α): <span id="val-alpha">0.3</span></label>
+                        <input type="range" id="input-alpha" min="0.1" max="1.0" step="0.1" value="0.3">
+                    </div>
+                    <div class="param-item">
+                        <label>Gamma (γ): <span id="val-gamma">0.9</span></label>
+                        <input type="range" id="input-gamma" min="0.1" max="0.99" step="0.05" value="0.9">
+                    </div>
+                </div>
+                <div class="param-item" style="margin-top: 8px;">
+                    <label>Epsilon (ε): <span id="val-epsilon">0.9</span></label>
+                    <input type="range" id="input-epsilon" min="0.1" max="1.0" step="0.1" value="0.9">
+                </div>
+            </div>
+
+            <!-- Dashboard Stats (Readonly from training) -->
+            <div class="section" style="margin-top:20px;">
+                <div class="section-title">Performance Stats</div>
+            </div>
+            <div style="margin: 0 24px; display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                <div class="stat-card" style="margin:0;">
+                    <div class="stat-value" id="epCount">—</div>
+                    <div class="stat-label">Episodes</div>
+                </div>
+                <div class="stat-card" style="margin:0;">
+                    <div class="stat-value" id="pathLen">—</div>
+                    <div class="stat-label">Path Steps</div>
+                </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="btn-group">
+                <button class="btn btn-primary" id="trainBtn">
+                    ⚡ Start Live Training
+                </button>
+                <div style="display: flex; gap: 8px; width: 100%;">
+                    <button class="btn btn-primary" id="loadBtn" style="flex: 1; font-size: 12px; padding: 10px;">
+                        📂 Load Python
+                    </button>
+                    <button class="btn btn-success" id="simulateBtn" disabled style="flex: 1; font-size: 12px; padding: 10px;">
+                        ▶ Simulate
+                    </button>
+                </div>
+                <button class="btn btn-danger" id="resetBtn">
+                    ↺ Reset Scene
+                </button>
+            </div>
+
+            <!-- Status -->
+            <div class="status-panel">
+                <div class="status-label">Status</div>
+                <div id="statusText">Initializing scene…</div>
+                <div class="progress-wrap">
+                    <div id="progressBar"></div>
+                </div>
+            </div>
+
+            <!-- Reward System -->
+            <div class="section" style="margin-top:14px;">
+                <div class="section-title">Reward System</div>
+            </div>
+            <div class="legend" style="margin: 0 24px;">
+                <div class="legend-row">
+                    <div class="swatch" style="background:#6b8cff;"></div>
+                    Normal move &nbsp;<strong style="margin-left:auto;color:#6b8cff">−1</strong>
+                </div>
+                <div class="legend-row">
+                    <div class="swatch" style="background:#ff5f7e;"></div>
+                    Wall hit &nbsp;<strong style="margin-left:auto;color:#ff5f7e">−100</strong>
+                </div>
+                <div class="legend-row">
+                    <div class="swatch" style="background:#22d3a0;"></div>
+                    Reach goal &nbsp;<strong style="margin-left:auto;color:#22d3a0">+100</strong>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="section" style="margin-top:14px;">
+                <div class="section-title">Legend</div>
+            </div>
+            <div class="legend" style="margin: 0 24px 0;">
+                <div class="legend-row">
+                    <div class="swatch" style="background:#1a2850;border:1px solid #30408a;"></div>Wall cube
+                </div>
+                <div class="legend-row">
+                    <div class="swatch" style="background:#6b8cff;"></div>Start cell
+                </div>
+                <div class="legend-row">
+                    <div class="swatch" style="background:#22d3a0;"></div>Goal cube
+                </div>
+                <div class="legend-row">
+                    <div class="swatch" style="background:#ff8c42;border-radius:50%;"></div>Robot (sphere)
+                </div>
+                <div class="legend-row">
+                    <div class="swatch" style="background:#ff8c42;opacity:0.5;border-radius:50%;"></div>Trail markers
+                </div>
+            </div>
+
+            <!-- Controls hint -->
+            <div style="margin: 14px 24px 20px; font-size: 11px; color: var(--text-muted); line-height: 1.6;">
+                🖱 Left-drag: rotate &nbsp;|&nbsp; Scroll: zoom<br>
+                🖱 Right-drag: pan
+            </div>
+
+        </aside>
+
+        <!-- ── 3D CANVAS ── -->
+        <div id="canvas-wrap">
+            <div id="pathBadge">🏁 Goal Reached!</div>
+            <div id="trailInfo"></div>
+        </div>
+
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast"></div>
+
+    <!-- Scripts: maze globals needed by main.js -->
+    <script src="maze.js"></script>
+    <!-- path_data.js is auto-generated by train.py — sets window.PATH_DATA -->
+    <script src="path_data.js"></script>
+    <script src="main.js"></script>
+</body>
+
+</html>
