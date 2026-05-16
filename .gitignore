@@ -13,8 +13,7 @@ pip-delete-this-directory.txt
 .vscode/
 
 # Project Specific
-path.json
-path_data.js
+# (Path data is now tracked for deployment)
 
 # Deployment
 node_modules/
