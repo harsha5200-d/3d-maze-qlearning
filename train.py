@@ -143,25 +143,7 @@ def generate_manual_maze():
 
     return maze, rows, cols, (start_r, start_c), (goal_r, goal_c)
 
-# Ask user for input method
-print("\nMaze Generation Method:")
-print("1. Random Maze (Auto-generated)")
-print("2. Manual Input (Define dimensions, start, goal, and walls)")
-while True:
-    choice = input("Select an option (1 or 2): ").strip()
-    if choice in ['1', '2']:
-        break
-    print("Invalid choice. Enter 1 or 2.")
-
-if choice == '1':
-    MAZE_ROWS = 10
-    MAZE_COLS = 10
-    START = (0, 0)
-    GOAL  = (MAZE_ROWS - 1, MAZE_COLS - 1)
-    MAZE = generate_random_maze(MAZE_ROWS, MAZE_COLS)
-    ROWS, COLS = MAZE.shape
-else:
-    MAZE, ROWS, COLS, START, GOAL = generate_manual_maze()
+# (Maze generation logic moved to main)
 
 # Actions: [row_delta, col_delta]
 ACTIONS = [
@@ -175,7 +157,9 @@ N_ACTIONS = len(ACTIONS)
 ACTION_NAMES = ["UP", "DOWN", "LEFT", "RIGHT"]
 
 
-# ─── HELPERS ──────────────────────────────────────────────────────────────────
+# Globals (initialized in main)
+MAZE, ROWS, COLS, START, GOAL = None, None, None, None, None
+
 def in_bounds(r, c):
     return 0 <= r < ROWS and 0 <= c < COLS
 
@@ -386,7 +370,19 @@ def main():
     parser.add_argument("--alpha",    type=float, default=0.3,   help="Learning rate α (default: 0.3)")
     parser.add_argument("--gamma",    type=float, default=0.9,   help="Discount factor γ (default: 0.9)")
     parser.add_argument("--epsilon",  type=float, default=0.9,   help="Exploration rate ε (default: 0.9)")
+    parser.add_argument("--manual",   action="store_true",      help="Manually define the maze")
     args = parser.parse_args()
+
+    global MAZE, ROWS, COLS, START, GOAL
+
+    if args.manual:
+        MAZE, ROWS, COLS, START, GOAL = generate_manual_maze()
+    else:
+        # Default: Random 10x10 maze
+        ROWS, COLS = 10, 10
+        START = (0, 0)
+        GOAL  = (ROWS - 1, COLS - 1)
+        MAZE = generate_random_maze(ROWS, COLS)
 
     # Validate
     if not (0 < args.alpha <= 1):
