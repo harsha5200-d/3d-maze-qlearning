@@ -1,0 +1,16 @@
+{
+  "name": "robot-maze-qlearning",
+  "version": "1.0.0",
+  "description": "Robot Maze Navigation with Q-Learning. Python trains the agent, Three.js visualizes the path.",
+  "main": "main.js",
+  "scripts": {
+    "start": "npx serve .",
+    "dev": "npx serve ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "serve": "^14.2.1"
+  }
+}
